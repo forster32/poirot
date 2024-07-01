@@ -1,11 +1,9 @@
 
 import re
 
-from core.chat import ChatGPT, continuous_llm_calls
+from core.chat import ChatGPT
 from core.entities import (
-    FileChangeRequest,
     Message,
-    RegexMatchError,
     Snippet,
 )
 
@@ -105,7 +103,6 @@ def context_get_files_to_change(
     problem_statement,
     # pr_diffs: str = "",
 ):
-    use_openai = True
     messages: list[Message] = []
     messages.append(
         Message(role="system", content=issue_sub_request_system_prompt, key="system")
@@ -187,7 +184,6 @@ def context_get_files_to_change(
         model=MODEL,
         temperature=0.1,
         # images=images,
-        use_openai=use_openai,
     )
     relevant_files = []
     read_only_files = []

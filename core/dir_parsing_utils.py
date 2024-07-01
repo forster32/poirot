@@ -115,6 +115,7 @@ def directory_to_chunks(
 
     logger.info(f"Reading files from {directory}")
     chunked_files = set()
+    # TODO: refactor this to use Repository.get_file_list
     def traverse_dir(file_path: str = directory):
         only_file_name = os.path.basename(file_path)
         if only_file_name in ("node_modules", ".venv", "build", "venv", "patch"):

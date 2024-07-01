@@ -1,12 +1,12 @@
 from collections import defaultdict
 import copy
-import traceback
+# import traceback
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 
 from loguru import logger
 from tqdm import tqdm
-import networkx as nx
+# import networkx as nx
 
 from agents.analyze_snippets import AnalyzeSnippetAgent
 from config.client import PoirotConfig
@@ -19,6 +19,8 @@ from core.lexical_search import (
 )
 from core.poirot_bot import context_get_files_to_change
 from dataclass.separatedsnippets import SeparatedSnippets
+from utils.repository_utils import Repository
+from utils.streamable_functions import streamable
 from utils.timer import Timer
 from utils.multi_query import generate_multi_queries
 from utils.openai_listwise_reranker import listwise_rerank_snippets
@@ -116,8 +118,9 @@ def apply_adjustment_score(
 
 VECTOR_SEARCH_WEIGHT = 2
 
+@streamable
 def multi_get_top_k_snippets(
-    repository_directory,
+    repository,
     queries: list[str],
     k: int = 15,
     do_not_use_file_cache: bool = False, # added for review_pr
@@ -130,7 +133,7 @@ def multi_get_top_k_snippets(
     poirot_config: PoirotConfig = PoirotConfig()
     with Timer() as timer:
         for message, snippets, lexical_index in prepare_lexical_search_index.stream(
-            repository_directory,
+            repository.root_directory,
             poirot_config,
             do_not_use_file_cache=do_not_use_file_cache,
             seed=seed
@@ -138,7 +141,8 @@ def multi_get_top_k_snippets(
             yield message, [], snippets, []
         logger.info(f"Lexical indexing took {timer.time_elapsed} seconds")
         for snippet in snippets:
-            snippet.file_path = snippet.file_path[len(repository_directory) + 1 :]
+            snippet.file_path = snippet.file_path[len(repository.root_directory) + 1 :]
+            logger.info(f"snippet.file_path:{snippet.file_path}, repository.root_directory:{repository.root_directory}")
         yield "Searching lexical index...", [], snippets, []
         with Timer() as timer:
             content_to_lexical_score_list = [search_index(query, lexical_index) for query in queries]
@@ -177,20 +181,19 @@ def multi_get_top_k_snippets(
     yield "Finished hybrid search, currently performing reranking...", ranked_snippets_list, snippets, content_to_lexical_score_list
 
 
-# @streamable
+@streamable
 def get_top_k_snippets(
-    repository_directory,
+    repository,
     query: str,
     k: int = 15,
     do_not_use_file_cache: bool = False, # added for review_pr
-    use_repo_dir: bool = False,
     seed: str = "",
     *args,
     **kwargs,
 ):
     # Kinda cursed, we have to rework this
     for message, ranked_snippets_list, snippets, content_to_lexical_score_list in multi_get_top_k_snippets.stream(
-        repository_directory, [query], k, do_not_use_file_cache=do_not_use_file_cache, use_repo_dir=use_repo_dir, seed=seed, *args, **kwargs
+        repository, [query], k, do_not_use_file_cache=do_not_use_file_cache, seed=seed
     ):
         yield message, ranked_snippets_list[0] if ranked_snippets_list else [], snippets, content_to_lexical_score_list[0] if content_to_lexical_score_list else []
 
@@ -284,8 +287,9 @@ def process_snippets(type_name, *args, **kwargs):
         return type_name, {}
     return type_name, get_pointwise_reranked_snippet_scores(*args, **kwargs)
 
+@streamable
 def multi_prep_snippets(
-    repository_directory,
+    repository,
     queries,
     top_k: int = 15,
     skip_reranking: bool = False, # This is only for pointwise reranking
@@ -300,7 +304,7 @@ def multi_prep_snippets(
     if len(queries) > 1:
         logger.info("Using multi query...")
         for message, ranked_snippets_list, snippets, content_to_lexical_score_list in multi_get_top_k_snippets.stream(
-            repository_directory, queries, top_k * 3 # k * 3 to have enough snippets to rerank
+            repository, queries, top_k * 3 # k * 3 to have enough snippets to rerank
         ):
             yield message, []
         # Use RRF to rerank snippets
@@ -316,7 +320,7 @@ def multi_prep_snippets(
         )[:top_k]
     else:
         for message, ranked_snippets, snippets, content_to_lexical_score in get_top_k_snippets.stream(
-            repository_directory, queries[0], top_k
+            repository, queries[0], top_k
         ):
             yield message, ranked_snippets
     separated_snippets = separate_snippets_by_type(snippets)
@@ -408,8 +412,9 @@ def multi_prep_snippets(
         ranked_snippets[:NUM_SNIPPETS_TO_RERANK] = listwise_rerank_snippets(queries[0], ranked_snippets[:NUM_SNIPPETS_TO_RERANK])
     return ranked_snippets
 
+@streamable
 def prep_snippets(
-    repository_directory,
+    repository,
     query,
     top_k: int = 15,
     use_multi_query: bool = True,
@@ -420,7 +425,7 @@ def prep_snippets(
     else:
         queries = [query]
     for message, snippets in multi_prep_snippets.stream(
-        repository_directory, queries, top_k
+        repository, queries, top_k
     ):
         yield message, snippets
     return snippets
@@ -487,9 +492,9 @@ def get_relevant_context(
         repo_context_manager.read_only_snippets = copy.deepcopy(previous_read_only_snippets)
     return repo_context_manager
 
-
+@streamable
 def fetch_relevant_files(
-    repository_directory,
+    repository,
     title,
     summary,
     replies_text,
@@ -502,9 +507,9 @@ def fetch_relevant_files(
         "\n"
     )
     
-    for message, ranked_snippets in prep_snippets.stream(repository_directory, search_query):
+    for message, ranked_snippets in prep_snippets.stream(repository, search_query):
         repo_context_manager = RepoContextManager(
-            repository_directory=repository_directory,
+            repository=repository,
             current_top_snippets=ranked_snippets,
             read_only_snippets=[],
         )
@@ -525,17 +530,7 @@ def fetch_relevant_files(
     )
     yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
     # except Exception as e:
-    #     trace = traceback.format_exc()
-    #     logger.exception(f"{trace} (tracking ID: `{tracking_id}`)")
-    #     posthog.capture(
-    #         username,
-    #         "failed",
-    #         properties={
-    #             **metadata,
-    #             "error": str(e),
-    #             "duration": time() - on_ticket_start_time,
-    #         },
-    #     )
+        # logger.exception()
     #     raise e
     return repo_context_manager
 
@@ -545,7 +540,9 @@ if __name__ == "__main__":
     title = "I no longer use anthropic claude, please help me remove all related code"
     summary = "I have stopped using anthropic claude and I need to remove all related code. Can someone help me with this?"
     replies_text = ""
-    # TODO: cache seed, eg: snapshot_id
-    # Please check whether snapshot_id is in line with business logic.
-    seed = ""
-    fetch_relevant_files(repository_directory, title, summary, replies_text, seed)
+
+    repository = Repository(repository_directory)
+
+    logger.info("Fetching relevant files")
+    for message, repo_context_manager in fetch_relevant_files.stream(repository, title, summary, replies_text):
+      logger.info(message)

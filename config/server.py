@@ -18,7 +18,10 @@ OPENAI_EMBEDDINGS_AZURE_API_VERSION = os.environ.get("OPENAI_EMBEDDINGS_AZURE_AP
 OPENAI_EMBEDDINGS_AZURE_DEPLOYMENT = os.environ.get("OPENAI_EMBEDDINGS_AZURE_DEPLOYMENT", None)
 OPENAI_EMBEDDINGS_AZURE_ENDPOINT = os.environ.get("OPENAI_EMBEDDINGS_AZURE_ENDPOINT", None)
 
+BATCH_SIZE = int(
+    os.environ.get("BATCH_SIZE", 256) # Voyage only allows 128 items per batch and 120000 tokens per batch
+)
 
 
-CACHE_DIRECTORY = os.environ.get("CACHE_DIRECTORY", "/mnt/caches")
+CACHE_DIRECTORY = os.environ.get("CACHE_DIRECTORY", "caches")
 

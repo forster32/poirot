@@ -21,9 +21,9 @@ from config.server import (
     OPENAI_EMBEDDINGS_AZURE_ENDPOINT,
 )
 from core.entities import Message
-from logn.cache import file_cache
+# from logn.cache import file_cache
 from utils.timer import Timer
-from anthropic import Anthropic
+# from anthropic import Anthropic
 
 OPENAI_TIMEOUT = 120
 
@@ -54,7 +54,7 @@ RATE_LIMITS = {
 
 
 class OpenAIProxy:
-    @file_cache(ignore_params=[])
+    # @file_cache(ignore_params=[])
     def call_openai(
         self,
         model: str,
@@ -286,9 +286,9 @@ def get_client():
     OPENAI_API_VERSION = os.environ.get(
         "OPENAI_API_VERSION", None
     )
-    if OPENAI_API_TYPE == "anthropic":
-        client = Anthropic()
-        model="claude-3-opus-20240229"
+    # if OPENAI_API_TYPE == "anthropic":
+    #     client = Anthropic()
+    #     model="claude-3-opus-20240229"
     if OPENAI_API_TYPE == "openai":
         client = OpenAI(api_key=OPENAI_API_KEY, timeout=90) if OPENAI_API_KEY else None
         model = DEFAULT_GPT4_MODEL

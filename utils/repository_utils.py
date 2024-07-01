@@ -1,8 +1,10 @@
 import os
 
+from dataclasses import dataclass
+
 from config.client import PoirotConfig
 
-
+@dataclass
 class Repository:
     root_directory: str
 
@@ -28,3 +30,6 @@ class Repository:
         dfs_helper(self.root_directory)
         files = [file[len(self.root_directory) + 1 :] for file in files]
         return files
+    
+    # TODO
+    # def __del__(self):

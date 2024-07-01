@@ -4,11 +4,11 @@ import subprocess
 import urllib
 from dataclasses import dataclass, field
 
-import networkx as nx
-import openai
+# import networkx as nx
+# import openai
 from loguru import logger
-from openai.types.beta.thread import Thread
-from openai.types.beta.threads.run import Run
+# from openai.types.beta.thread import Thread
+# from openai.types.beta.threads.run import Run
 
 from config.client import PoirotConfig
 from core.chat import ChatGPT
@@ -16,11 +16,10 @@ from core.entities import Message, Snippet
 # from logn.cache import file_cache
 # from utils.chat_logger import ChatLogger
 # from utils.convert_openai_anthropic import AnthropicFunctionCall, mock_function_calls_to_string
-from utils.github_utils import ClonedRepo
 from utils.repository_utils import Repository
-from utils.ripgrep_utils import post_process_rg_output
-from utils.openai_listwise_reranker import listwise_rerank_snippets
-from utils.progress import AssistantConversation, TicketProgress
+# from utils.ripgrep_utils import post_process_rg_output
+# from utils.openai_listwise_reranker import listwise_rerank_snippets
+# from utils.progress import AssistantConversation, TicketProgress
 from utils.tree_utils import DirectoryTree
 
 ASSISTANT_MAX_CHARS = 4096 * 4 * 0.95  # ~95% of 4k tokens
@@ -257,153 +256,11 @@ f'''
     def update_issue_report_and_plan(self, new_issue_report_and_plan: str):
         self.issue_report_and_plan = new_issue_report_and_plan
 
-
-"""
-Dump the import tree to a string
-Ex:
-main.py
-├── database.py
-│   └── models.py
-└── utils.py
-    └── models.py
-"""
-
-def build_full_hierarchy(
-    graph: nx.DiGraph, start_node: str, k: int, prefix="", is_last=True, level=0
-):
-    if level > k:
-        return ""
-    if level == 0:
-        hierarchy = f"{start_node}\n"
-    else:
-        hierarchy = f"{prefix}{'└── ' if is_last else '├── '}{start_node}\n"
-    child_prefix = prefix + ("    " if is_last else "│   ")
-    try:
-        successors = {
-            node
-            for node, length in nx.single_source_shortest_path_length(
-                graph, start_node, cutoff=1
-            ).items()
-            if length == 1
-        }
-    except Exception as e:
-        print("error occured while fetching successors:", e)
-        return hierarchy
-    sorted_successors = sorted(successors)
-    for idx, child in enumerate(sorted_successors):
-        child_is_last = idx == len(sorted_successors) - 1
-        hierarchy += build_full_hierarchy(
-            graph, child, k, child_prefix, child_is_last, level + 1
-        )
-    if level == 0:
-        try:
-            predecessors = {
-                node
-                for node, length in nx.single_source_shortest_path_length(
-                    graph.reverse(), start_node, cutoff=1
-                ).items()
-                if length == 1
-            }
-        except Exception as e:
-            print("error occured while fetching predecessors:", e)
-            return hierarchy
-        sorted_predecessors = sorted(predecessors)
-        for idx, parent in enumerate(sorted_predecessors):
-            parent_is_last = idx == len(sorted_predecessors) - 1
-            # Prepend parent hierarchy to the current node's hierarchy
-            hierarchy = (
-                build_full_hierarchy(graph, parent, k, "", parent_is_last, level + 1)
-                + hierarchy
-            )
-    return hierarchy
-
-
-def load_graph_from_file(filename):
-    G = nx.DiGraph()
-    current_node = None
-    with open(filename, "r") as file:
-        for line in file:
-            if not line:
-                continue
-            if line.startswith(" "):
-                line = line.strip()
-                if current_node:
-                    G.add_edge(current_node, line)
-            else:
-                line = line.strip()
-                current_node = line
-                if current_node:
-                    G.add_node(current_node)
-    return G
-
-# @file_cache(ignore_params=["rcm", "G"])
-def graph_retrieval(formatted_query: str, top_k_paths: list[str], rcm: RepoContextManager, G: nx.DiGraph):
-    # TODO: tune these params
-    top_paths_cutoff = 25
-    num_rerank = 30
-    selected_paths = rcm.top_snippet_paths[:10]
-    top_k_paths = top_k_paths[:top_paths_cutoff]
-
-    snippet_scores = rcm.snippet_scores
-    for snippet, score in snippet_scores.items():
-        if snippet.split(":")[0] in top_k_paths:
-            snippet_scores[snippet] += 1
-
-    personalization = {}
-
-    for snippet in selected_paths:
-        personalization[snippet] = 1
-    try:
-        # @file_cache()
-        def get_distilled_file_paths(formatted_query, top_k_paths):
-            personalized_pagerank_scores = nx.pagerank(G, personalization=personalization, alpha=0.85)
-            unpersonalized_pagerank_scores = nx.pagerank(G, alpha=0.85)
-
-            # tfidf style
-            normalized_pagerank_scores = {path: score * log(1 / (1e-6 + unpersonalized_pagerank_scores[path])) for path, score in personalized_pagerank_scores.items()}
-
-            top_pagerank_scores = sorted(normalized_pagerank_scores.items(), key=lambda x: x[1], reverse=True)
-            
-            top_pagerank_paths = [path for path, _score in top_pagerank_scores]
-
-            distilled_file_path_list = []
-
-            for file_path, score in top_pagerank_scores:
-                if file_path.endswith(".js") and file_path.replace(".js", ".ts") in top_pagerank_paths:
-                    continue
-                if file_path in top_k_paths:
-                    continue
-                if "generated" in file_path or "mock" in file_path or "test" in file_path:
-                    continue
-                try:
-                    rcm.cloned_repo.get_file_contents(file_path)
-                except FileNotFoundError:
-                    continue
-                distilled_file_path_list.append(file_path)
-            return distilled_file_path_list
-        distilled_file_path_list = get_distilled_file_paths(formatted_query, top_k_paths)
-        # Rerank once
-        reranked_snippets = []
-        for file_path in distilled_file_path_list[:num_rerank]:
-            contents = rcm.cloned_repo.get_file_contents(file_path)
-            reranked_snippets.append(Snippet(
-                content=contents,
-                start=0,
-                end=contents.count("\n") + 1,
-                file_path=file_path,
-            ))
-        reranked_snippets = listwise_rerank_snippets(formatted_query, reranked_snippets, prompt_type="graph")
-        distilled_file_path_list[:num_rerank] = [snippet.file_path for snippet in reranked_snippets]
-
-        return distilled_file_path_list
-    except Exception as e:
-        logger.error(e)
-        return []
-
 # add import trees for any relevant_file_paths (code files that appear in query)
 def build_import_trees(
     rcm: RepoContextManager,
-    import_graph: nx.DiGraph,
+    import_graph: None,
+    # import_graph: nx.DiGraph,
     # override_import_graph: nx.DiGraph = None,
 ) -> tuple[RepoContextManager]:
     # if import_graph is None and override_import_graph is None:
@@ -514,7 +371,7 @@ def generate_file_imports(graph,
 # fetch all files mentioned in the user query
 def parse_query_for_files(
     query: str, rcm: RepoContextManager
-) -> tuple[RepoContextManager, nx.DiGraph]:
+) -> tuple[RepoContextManager, None]:
     MAX_FILES_TO_ADD = 5
     code_files_to_add = []
     code_files_to_check = set(list(rcm.repository.get_file_list()))
@@ -549,7 +406,7 @@ def get_relevant_context(
     query: str,
     repo_context_manager: RepoContextManager,
     seed: int = None,
-    import_graph: nx.DiGraph = None,
+    # import_graph: nx.DiGraph = None,
     num_rollouts: int = NUM_ROLLOUTS,
     ticket_progress = None,
     chat_logger = None,
@@ -559,7 +416,7 @@ def get_relevant_context(
         # for any code file mentioned in the query, build its import tree - This is currently not used
         repo_context_manager = build_import_trees(
             repo_context_manager,
-            import_graph,
+            # import_graph,
         )
         # for any code file mentioned in the query add it to the top relevant snippets
         repo_context_manager = add_relevant_files_to_top_snippets(repo_context_manager)

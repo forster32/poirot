@@ -87,7 +87,6 @@ def generate_multi_queries(input_query: str):
         content=f"<github_issue>\n{stripped_input}\n</github_issue>",
         model="gpt-4o",
         temperature=0.7, # I bumped this and it improved the benchmarks
-        use_openai=True,
     )
     pattern = re.compile(r"<query>(?P<query>.*?)</query>", re.DOTALL)
     queries = []

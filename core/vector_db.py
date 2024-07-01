@@ -12,7 +12,7 @@ from scipy.spatial.distance import cdist
 
 from tqdm import tqdm
 from utils.timer import Timer
-from config.server import BATCH_SIZE, CACHE_DIRECTORY, VOYAGE_API_AWS_ENDPOINT_NAME, VOYAGE_API_KEY, VOYAGE_API_USE_AWS
+from config.server import BATCH_SIZE, CACHE_DIRECTORY
 from utils.hash import hash_sha256
 
 

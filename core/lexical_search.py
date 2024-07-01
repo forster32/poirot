@@ -1,21 +1,22 @@
 import multiprocessing
 import os
 import re
-from collections.abc import Iterable
 import time
+from collections.abc import Iterable
 
 import tantivy
 from diskcache import Cache
 from loguru import logger
 from tqdm import tqdm
 
-from core.entities import Snippet
-from config.server import CACHE_DIRECTORY, FILE_CACHE_DISABLED, REDIS_URL
-from utils.timer import Timer
+from config.client import PoirotConfig
+from config.server import CACHE_DIRECTORY
 from core.dir_parsing_utils import directory_to_chunks
+from core.entities import Snippet
 from core.vector_db import multi_get_query_texts_similarity
 from dataclass.files import Document
-from config.client import PoirotConfig
+from utils.timer import Timer
+from utils.streamable_functions import streamable
 
 
 token_cache = Cache(f'{CACHE_DIRECTORY}/token_cache')
@@ -98,7 +99,7 @@ def snippets_to_docs(snippets: list[Snippet], len_repo_cache_dir):
         )
     return docs
 
-# @streamable
+@streamable
 def prepare_index_from_snippets(
     snippets: list[Snippet],
     len_repo_cache_dir: int = 0,
@@ -192,7 +193,6 @@ def compute_vector_search_scores(queries: list[str], snippets: list[Snippet]):
         }
     logger.info(f"Snippet to contents took {timer.time_elapsed:.2f} seconds")
     snippet_contents_array = list(snippet_str_to_contents.values())
-    # TODO
     multi_query_snippet_similarities = multi_get_query_texts_similarity(
         queries, snippet_contents_array
     )
@@ -212,7 +212,7 @@ def get_lexical_cache_key(
     return f"{repo_directory}_{CACHE_VERSION}_{seed}"
 
 
-#@streamable
+@streamable
 def prepare_lexical_search_index(
     repo_directory: str,
     poirot_config: PoirotConfig,
@@ -225,7 +225,7 @@ def prepare_lexical_search_index(
     snippets_results = snippets_cache.get(lexical_cache_key)
     if snippets_results is None:
         snippets, file_list = directory_to_chunks(
-            repo_directory, poirot_config, do_not_use_file_cache=do_not_use_file_cache
+            repo_directory, poirot_config
         )
         snippets_cache[lexical_cache_key] = snippets, file_list
     else:
