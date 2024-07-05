@@ -122,8 +122,7 @@ VECTOR_SEARCH_WEIGHT = 2
 def multi_get_top_k_snippets(
     repository,
     queries: list[str],
-    k: int = 15,
-    do_not_use_file_cache: bool = False, # added for review_pr
+    top_k: int = 15,
     seed: str = "", # for caches
 ):
     """
@@ -135,7 +134,6 @@ def multi_get_top_k_snippets(
         for message, snippets, lexical_index in prepare_lexical_search_index.stream(
             repository.root_directory,
             poirot_config,
-            do_not_use_file_cache=do_not_use_file_cache,
             seed=seed
         ):
             yield message, [], snippets, []
@@ -176,7 +174,7 @@ def multi_get_top_k_snippets(
             snippets,
             key=lambda snippet: content_to_lexical_score[snippet.denotation],
             reverse=True,
-        )[:k] for content_to_lexical_score in content_to_lexical_score_list
+        )[:top_k] for content_to_lexical_score in content_to_lexical_score_list
     ]
     yield "Finished hybrid search, currently performing reranking...", ranked_snippets_list, snippets, content_to_lexical_score_list
 
@@ -185,15 +183,14 @@ def multi_get_top_k_snippets(
 def get_top_k_snippets(
     repository,
     query: str,
-    k: int = 15,
-    do_not_use_file_cache: bool = False, # added for review_pr
+    top_k: int = 15,
     seed: str = "",
     *args,
     **kwargs,
 ):
     # Kinda cursed, we have to rework this
     for message, ranked_snippets_list, snippets, content_to_lexical_score_list in multi_get_top_k_snippets.stream(
-        repository, [query], k, do_not_use_file_cache=do_not_use_file_cache, seed=seed
+        repository, [query], top_k, seed=seed
     ):
         yield message, ranked_snippets_list[0] if ranked_snippets_list else [], snippets, content_to_lexical_score_list[0] if content_to_lexical_score_list else []
 
@@ -224,8 +221,8 @@ def get_pointwise_reranked_snippet_scores(
     Ranks 6-100 are reranked using Cohere. Then we divide the scores by 1_000_000 to make them comparable to the original scores.
     """
 
-    if not COHERE_API_KEY and not VOYAGE_API_KEY:
-        return snippet_scores
+    # if not COHERE_API_KEY and not VOYAGE_API_KEY:
+    return snippet_scores
 
     # rerank_scores = copy.deepcopy(snippet_scores)
 
@@ -397,14 +394,14 @@ def multi_prep_snippets(
                 all_snippets.extend(snippets_subset[:max_results])
 
         all_snippets.sort(key=lambda snippet: snippet.score, reverse=True)
-        ranked_snippets = all_snippets[:k]
+        ranked_snippets = all_snippets[:top_k]
         yield "Finished reranking, here are the relevant final search results:\n", ranked_snippets
     else:
         ranked_snippets = sorted(
             snippets,
             key=lambda snippet: content_to_lexical_score[snippet.denotation],
             reverse=True,
-        )[:k]
+        )[:top_k]
         yield "Finished reranking, here are the relevant final search results:\n", ranked_snippets
     # you can use snippet.denotation and snippet.get_snippet()
     # TODO check skip_pointwise_reranking
@@ -417,13 +414,10 @@ def prep_snippets(
     repository,
     query,
     top_k: int = 15,
-    use_multi_query: bool = True,
 ) -> list[Snippet]:
-    if use_multi_query:
-        queries = [query, *generate_multi_queries(query)]
-        yield "Finished generating search queries, performing lexical search...\n", []
-    else:
-        queries = [query]
+    queries = [query, *generate_multi_queries(query)]
+    yield "Finished generating search queries, performing lexical search...\n", []
+
     for message, snippets in multi_prep_snippets.stream(
         repository, queries, top_k
     ):
@@ -439,7 +433,7 @@ def get_relevant_context(
     # chat_logger = None,
     # images = None
 ) -> RepoContextManager:
-    logger.info("Seed: " + str(seed))
+    # logger.info("Seed: " + str(seed))
     repo_context_manager = build_import_trees(
         repo_context_manager,
         # import_graph,
@@ -452,11 +446,9 @@ def get_relevant_context(
         relevant_snippets=repo_context_manager.current_top_snippets,
         read_only_snippets=repo_context_manager.read_only_snippets,
         problem_statement=query,
-        # repo_name=repo_context_manager.cloned_repo.repo_full_name,
         # import_graph=import_graph,
         # chat_logger=chat_logger,
         # seed=seed,
-        # cloned_repo=repo_context_manager.cloned_repo,
         # images=images
     )
     previous_top_snippets = copy.deepcopy(repo_context_manager.current_top_snippets)
@@ -465,7 +457,7 @@ def get_relevant_context(
     repo_context_manager.read_only_snippets = []
     for relevant_file in relevant_files:
         try:
-            content = repo_context_manager.cloned_repo.get_file_contents(relevant_file)
+            content = repo_context_manager.repository.get_file_contents(relevant_file)
         except FileNotFoundError:
             continue
         snippet = Snippet(
@@ -477,7 +469,7 @@ def get_relevant_context(
         repo_context_manager.current_top_snippets.append(snippet)
     for read_only_file in read_only_files:
         try:
-            content = repo_context_manager.cloned_repo.get_file_contents(read_only_file)
+            content = repo_context_manager.repository.get_file_contents(read_only_file)
         except FileNotFoundError:
             continue
         snippet = Snippet(
@@ -518,6 +510,7 @@ def fetch_relevant_files(
 
     parse_query_for_files(search_query, repo_context_manager)
     repo_context_manager = add_relevant_files_to_top_snippets(repo_context_manager)
+
     yield "Here are the files I've found so far. I'm currently selecting a subset of the files to edit.\n", repo_context_manager
 
     repo_context_manager = get_relevant_context(
@@ -536,13 +529,30 @@ def fetch_relevant_files(
 
 
 if __name__ == "__main__":
-    repository_directory = "."
-    title = "I no longer use anthropic claude, please help me remove all related code"
-    summary = "I have stopped using anthropic claude and I need to remove all related code. Can someone help me with this?"
-    replies_text = ""
+    import os
+
+    repository_directory = os.getenv("ROOT_DIRECTORY")
+
+    # title = "when I call openai chat, I want to get the token cost of the completion."
+    # summary = "I want to get the token cost of the completion when I call openai chat. Please help me with this."
+
+    title = "I want to add a field called 'description' to the table database table 'thread'."
+
+    # title = "我想要增加一个字段：用户级别，在用户创建 thread 数量达到一定数量时，用户级别会提升。"
+
+
+    summary = ""
+    replies_text=""
 
     repository = Repository(repository_directory)
 
     logger.info("Fetching relevant files")
     for message, repo_context_manager in fetch_relevant_files.stream(repository, title, summary, replies_text):
       logger.info(message)
+
+    print("-----return---------")
+    print("current_top_snippets: ", repo_context_manager.current_top_snippets)
+    print("read_only_snippets: ", repo_context_manager.read_only_snippets)
+    
+
+    print("-----end---------")

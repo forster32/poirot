@@ -5,5 +5,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# IDE
+.vscode/**
+
 # 解析缓存
 caches
+
+# Environments
+.env
+.env.local
+
+# logs
+msg.txt

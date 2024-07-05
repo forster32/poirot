@@ -12,7 +12,7 @@ class Message(BaseModel):
     key: str | None = None
     annotations: dict | None = None
 
-    @classmethod
+    # @classmethod
     # def from_tuple(cls, tup: tuple[str | None, str | None]) -> Self:
     #     if tup[0] is None:
     #         return cls(role="assistant", content=tup[1])
@@ -36,7 +36,20 @@ class Snippet(BaseModel):
     start: int
     end: int
     file_path: str
+    score: float = 0.0
+    type_name: Literal["source", "tests", "dependencies", "tools", "docs"] = "source"
 
+    def __eq__(self, other):
+        if isinstance(other, Snippet):
+            return (
+                self.file_path == other.file_path
+                and self.start == other.start
+                and self.end == other.end
+            )
+        return False
+
+    def __hash__(self):
+        return hash((self.file_path, self.start, self.end))
 
     def get_snippet(self, add_ellipsis: bool = True, add_lines: bool = True):
         lines = self.content.splitlines()
@@ -50,3 +63,16 @@ class Snippet(BaseModel):
             if self.end < self.content.count("\n") + 1:
                 snippet = snippet + "\n..."
         return snippet
+
+    def expand(self, num_lines: int = 25):
+        return Snippet(
+            content=self.content,
+            start=max(self.start - num_lines, 1),
+            end=min(self.end + num_lines, self.content.count("\n") + 1),
+            file_path=self.file_path,
+            score=self.score,
+        )
+
+    @property
+    def denotation(self):
+        return f"{self.file_path}:{self.start}-{self.end}"

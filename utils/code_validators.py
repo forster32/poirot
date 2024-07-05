@@ -1,13 +1,15 @@
 from __future__ import annotations
 import re
+import traceback
 
 from dataclasses import dataclass
 
-# from loguru import logger
+from loguru import logger
 from tree_sitter import Node, Parser, Language
 from tree_sitter_languages import get_parser as tree_sitter_get_parser
 import tree_sitter_python
 import tree_sitter_javascript
+import tree_sitter_go
 
 
 from core.entities import Snippet
@@ -15,14 +17,15 @@ from core.entities import Snippet
 AVG_CHAR_IN_LINE = 60
 
 def get_parser(language: str):
-    parser = Parser()
     if language in ("python", "py"):
-        lang = Language(tree_sitter_python.language(), "python")
+        lang = Language(tree_sitter_python.language())
     elif language in ("javascript", "js"):
-        lang = Language(tree_sitter_javascript.language(), "javascript")
+        lang = Language(tree_sitter_javascript.language())
+    elif language in ("golang", "go"):
+        lang = Language(tree_sitter_go.language())
     else:
         return tree_sitter_get_parser(language)
-    parser.set_language(lang)
+    parser = Parser(lang)
     return parser
 
 
@@ -242,6 +245,6 @@ def chunk_code(
             )
             snippets.append(new_snippet)
         return snippets
-    except Exception:
-        # logger.error(traceback.format_exc())
+    except Exception as e:
+        logger.error(traceback.format_exc())
         return []

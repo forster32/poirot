@@ -15,7 +15,6 @@ from core.chat import ChatGPT
 from core.entities import Message, Snippet
 # from logn.cache import file_cache
 # from utils.chat_logger import ChatLogger
-# from utils.convert_openai_anthropic import AnthropicFunctionCall, mock_function_calls_to_string
 from utils.repository_utils import Repository
 # from utils.ripgrep_utils import post_process_rg_output
 # from utils.openai_listwise_reranker import listwise_rerank_snippets
@@ -31,121 +30,6 @@ SCORE_THRESHOLD = 8 # good score
 STOP_AFTER_SCORE_THRESHOLD_IDX = 0 # stop after the first good score and past this index
 MAX_PARALLEL_FUNCTION_CALLS = 1
 NUM_BAD_FUNCTION_CALLS = 5
-
-
-anthropic_function_calls = """<tool_description>
-<tool_name>code_search</tool_name>
-<description>
-Passes the code_entity into ripgrep to search the entire codebase and return a list of files and line numbers where it appears. Useful for finding definitions, usages, and references to types, classes, functions, and other entities that may be relevant. Review the search results using `view_files` to determine relevance and discover new files to explore.
-</description>
-<parameters>
-<parameter>
-<name>analysis</name>
-<type>string</type>
-<description>Explain what new information you expect to discover from this search and why it's needed to get to the root of the issue. Focus on unknowns rather than already stored information.</description>
-</parameter>
-<parameter>
-<name>code_entity</name>
-<type>string</type>
-<description>
-The code entity to search for. This must be a distinctive name, not a generic term. For functions, search for the definition syntax, e.g. 'def foo' in Python or 'function bar' or 'const bar' in JavaScript. Trace dependencies of critical functions/classes, follow imports to find definitions, and explore how key entities are used across the codebase.
-</description>
-</parameter>
-</parameters>
-</tool_description>
-
-<tool_description>
-<tool_name>view_files</tool_name>
-<description>
-Retrieves the contents of the specified file(s). After viewing new files, use `code_search` on relevant entities to continue discovering potentially relevant files. You may view three files per tool call. Prioritize viewing new files over ones that are already stored.
-</description>
-<parameters>
-<parameter>
-<name>analysis</name>
-<type>string</type>
-<description>Explain what new information viewing these files will provide and why it's necessary to resolve the issue. Avoid restating already known information.</description>
-</parameter>
-<parameter>
-<name>first_file_path</name>
-<type>string</type>
-<description>The path of a new file to view.</description>
-</parameter>
-<parameter>
-<name>second_file_path</name>
-<type>string</type>
-<description>The path of another new file to view (optional).</description>
-</parameter>
-<parameter>
-<name>third_file_path</name>
-<type>string</type>
-<description>The path of a third new file to view (optional).</description>
-</parameter>
-</parameters>
-</tool_description>
-
-<tool_description>
-<tool_name>store_file</tool_name>
-<description>
-Adds a newly discovered file that provides important context or may need modifications to the list of stored files. You may only store one new file per tool call. Avoid storing files that have already been added.
-</description>
-<parameters>
-<parameter>
-<name>analysis</name>
-<type>string</type>
-<description>Explain what new information this file provides, why it's important for understanding and resolving the issue, and what potentially needs to be modified. Include a brief supporting code excerpt.</description>
-</parameter>
-<parameter>
-<name>file_path</name>
-<type>string</type>
-<description>The path of the newly discovered relevant file to store.</description>
-</parameter>
-</parameters>
-</tool_description>
-
-You MUST call the tools using this exact XML format:
-
-<function_call>
-<invoke>
-<tool_name>$TOOL_NAME</tool_name>
-<parameters>
-<$PARAMETER_NAME>$PARAMETER_VALUE</$PARAMETER_NAME>
-...
-</parameters>
-</invoke>
-</function_call>
-
-Here is an example illustrating a complex code search to discover new relevant information:
-
-<example>
-<function_call>
-<invoke>
-<tool_name>code_search</tool_name>
-<parameters>
-<analysis>The get_user_by_id method likely queries from a User model or database table. I need to search for references to "User" to find where and how user records are defined, queried and filtered in order to determine what changes are needed to support excluding deleted users from the get_user_by_id results.</analysis>
-<code_entity>User</code_entity>
-</parameters>
-</invoke>
-</function_call>
-</example>
-
-Remember, your goal is to discover and store ALL files that are relevant to solving the issue. Perform targeted searches to uncover new information, view new files to understand the codebase, and avoid re-analyzing already stored files."""
-
-sys_prompt = """You are a brilliant engineer assigned to solve the following GitHub issue. Your task is to search through the codebase and locate ALL files that are RELEVANT to resolving the issue. A file is considered RELEVANT if it provides important context or may need to be modified as part of the solution.
-
-You will begin with a small set of stored relevant files. However, it is critical that you identify every additional relevant file by exhaustively searching the codebase. Your goal is to generate an extremely comprehensive list of files for an intern engineer who is completely unfamiliar with the codebase. Prioritize finding all relevant files over perfect precision - it's better to include a few extra files than to miss a key one.
-
-To accomplish this, you will iteratively search for and view new files to gather all the necessary information. Follow these steps:
-
-1. Perform targeted code searches to find definitions, usages, and references for ALL unknown variables, classes, attributes, functions and other entities that may be relevant based on the currently stored files and issue description. Be creative and think critically about what to search for to get to the root of the issue. 
-
-2. View new files from the search results that seem relevant. Avoid viewing files that are already stored, and instead focus on discovering new information.
-
-3. Store additional files that provide important context or may need changes based on the search results, viewed files, and issue description. 
-
-Repeat steps 1-3, searching and exploring the codebase exhaustively until you are confident you have found all relevant files. Prioritize discovering new information over re-analyzing what is already known.
-
-Here are the tools at your disposal:
-""" + anthropic_function_calls
 
 unformatted_user_prompt = """\
 ## Stored Files
@@ -256,17 +140,16 @@ f'''
     def update_issue_report_and_plan(self, new_issue_report_and_plan: str):
         self.issue_report_and_plan = new_issue_report_and_plan
 
+# TODO
 # add import trees for any relevant_file_paths (code files that appear in query)
 def build_import_trees(
     rcm: RepoContextManager,
-    import_graph: None,
     # import_graph: nx.DiGraph,
     # override_import_graph: nx.DiGraph = None,
 ) -> tuple[RepoContextManager]:
     # if import_graph is None and override_import_graph is None:
     #     return rcm
-    if import_graph is None:
-        return rcm
+    return rcm
     # if override_import_graph:
     #     import_graph = override_import_graph
     # if we have found relevant_file_paths in the query, we build their import trees

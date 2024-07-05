@@ -1,6 +1,7 @@
 import re
 
 from loguru import logger
+from config.server import DEFAULT_GPT4_MODEL
 from core.chat import ChatGPT
 from core.entities import Message
 
@@ -83,9 +84,8 @@ def generate_multi_queries(input_query: str):
         ],
     )
     stripped_input = input_query.strip('\n')
-    response = chatgpt.chat_anthropic(
+    response = chatgpt.chat_openai(
         content=f"<github_issue>\n{stripped_input}\n</github_issue>",
-        model="gpt-4o",
         temperature=0.7, # I bumped this and it improved the benchmarks
     )
     pattern = re.compile(r"<query>(?P<query>.*?)</query>", re.DOTALL)

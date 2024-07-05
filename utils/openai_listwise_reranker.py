@@ -847,7 +847,7 @@ class RerankSnippetsBot(ChatGPT):
         ranking_pattern = r"<ranking>\n(.*?)\n</ranking>"
         formatted_code_snippets = self.format_code_snippets(code_snippets)
         try:
-            ranking_response = self.chat_anthropic(
+            ranking_response = self.chat_openai(
                 content=user_query_prompt.format(
                     user_query=user_query,
                     formatted_code_snippets=formatted_code_snippets,

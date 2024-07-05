@@ -16,8 +16,8 @@ from core.planning_prompts import (
     issue_sub_request_system_prompt,
 )
 
-
-SNIPPET_TOKEN_BUDGET = int(150_000 * 3.5)  # 140k tokens
+# TODO get token budget from calculate
+SNIPPET_TOKEN_BUDGET = int(100_000)  # 30k tokens
 MAX_SNIPPETS = 15
 
 
@@ -177,11 +177,9 @@ def context_get_files_to_change(
             ),
         ],
     )
-    MODEL = "claude-3-opus-20240229"
     open("msg.txt", "w").write(joint_message + "\n\n" + context_files_to_change_prompt)
-    files_to_change_response = chat_gpt.chat_anthropic(
+    files_to_change_response = chat_gpt.chat_openai(
         content=joint_message + "\n\n" + context_files_to_change_prompt,
-        model=MODEL,
         temperature=0.1,
         # images=images,
     )

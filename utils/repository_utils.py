@@ -31,5 +31,15 @@ class Repository:
         files = [file[len(self.root_directory) + 1 :] for file in files]
         return files
     
+
+    def get_file_contents(self, file_path, ref=None):
+        local_path = os.path.join(self.root_directory, file_path.lstrip("/"))
+        if os.path.exists(local_path) and os.path.isfile(local_path):
+            with open(local_path, "r", encoding="utf-8", errors="replace") as f:
+                contents = f.read()
+            return contents
+        else:
+            raise FileNotFoundError(f"{local_path} does not exist.")
+    
     # TODO
     # def __del__(self):

@@ -20,7 +20,8 @@ OpenAIModel = Literal[
   "gpt-4-1106-preview",
   "gpt-4-0125-preview",
   "gpt-4-turbo-2024-04-09",
-  "gpt-4-turbo"
+  "gpt-4-turbo",
+  "gpt-4o"
 ]
 
 ChatModel = OpenAIModel
@@ -56,11 +57,10 @@ class ChatGPT(MessageList):
     prev_message_states: list[list[Message]] = []
     model: ChatModel = DEFAULT_GPT4_MODEL
 
-    def chat_anthropic(
+    def chat_openai(
         self,
         content: str,
         assistant_message_content: str = "",
-        model: ChatModel = "gpt-4-turbo-2024-04-09",
         message_key: str | None = None,
         temperature: float | None = None,
         stop_sequences: list[str] = [],
@@ -77,34 +77,29 @@ class ChatGPT(MessageList):
         e = None
 
         try:
-            def call_anthropic(
-                model: str = model,
-            ) -> str: # add system message and model to cache
-                client = OpenAI()
-                
-                print("Starting OpenAI stream")
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=self.messages_dicts,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    stream=True,
-                )
-                streamed_text = ""
-                text = ""
-                for chunk in response:
-                    new_content = chunk.choices[0].delta.content
-                    text += new_content if new_content else ""
-                    if new_content:
-                        print(new_content, end="", flush=True)
-                        streamed_text += new_content
-                        for stop_sequence in stop_sequences:
-                            if stop_sequence in streamed_text:
-                                return truncate_text_based_on_stop_sequence(streamed_text, stop_sequences)
-                print() # clear the line
-                response = truncate_text_based_on_stop_sequence(streamed_text, stop_sequences)
-                return text
-            content = call_anthropic(self.model)
+            client = OpenAI()
+            
+            print("Starting OpenAI stream")
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=self.messages_dicts,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stream=True,
+            )
+            streamed_text = ""
+            text = ""
+            for chunk in response:
+                new_content = chunk.choices[0].delta.content
+                text += new_content if new_content else ""
+                if new_content:
+                    print(new_content, end="", flush=True)
+                    streamed_text += new_content
+                    for stop_sequence in stop_sequences:
+                        if stop_sequence in streamed_text:
+                            return truncate_text_based_on_stop_sequence(streamed_text, stop_sequences)
+            print() # clear the line
+            content = truncate_text_based_on_stop_sequence(streamed_text, stop_sequences)
         except Exception as e_:
             logger.exception(e_)
 

@@ -70,17 +70,16 @@ def snippet_majority_vote(outcomes: list[list[Snippet]]):
 
 class AnalyzeSnippetAgent(ChatGPT):
     @majority_vote_decorator(num_samples=2, voting_func=snippet_majority_vote) # unsure about 3 vs 1
-    def analyze_snippets(self, snippets: list[Snippet], type_name: str, issue: str, seed: int=0):
+    def analyze_snippets(self, snippets: list[Snippet], type_name: str, issue: str):
         # should a subset of the relevant snippets from a slice of the repo
         snippet_text = self.format_code_snippets(snippets)
         system_prompt = analyze_system_prompt.format(issue=issue, type_name=type_name, explanation=type_to_explanation[type_name])
         self.messages = [Message(role="system", content=system_prompt)]
         user_prompt = analyze_user_prompt.format(issue=issue, type_name=type_name, explanation=type_to_explanation[type_name], snippet_text=snippet_text)
-        analyze_response = self.chat_anthropic(
+        analyze_response = self.chat_openai(
             content=user_prompt,
             temperature=0.3, # we have majority voting
-            model="claude-3-haiku-20240307",
-            seed=seed,
+            # model="gpt-4o",
         )
         relevant_snippet_pattern = r"<relevant_snippet>\n(.*?)\n</relevant_snippet>"
         relevant_snippets = re.findall(relevant_snippet_pattern, analyze_response, re.DOTALL)

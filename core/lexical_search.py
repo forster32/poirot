@@ -22,7 +22,7 @@ from utils.streamable_functions import streamable
 token_cache = Cache(f'{CACHE_DIRECTORY}/token_cache')
 lexical_index_cache = Cache(f'{CACHE_DIRECTORY}/lexical_index_cache')
 snippets_cache = Cache(f'{CACHE_DIRECTORY}/snippets_cache')
-CACHE_VERSION = "v0.0.1"
+CACHE_VERSION = "v0.0.2"
 
 
 schema_builder = tantivy.SchemaBuilder()
@@ -103,7 +103,6 @@ def snippets_to_docs(snippets: list[Snippet], len_repo_cache_dir):
 def prepare_index_from_snippets(
     snippets: list[Snippet],
     len_repo_cache_dir: int = 0,
-    do_not_use_file_cache: bool = False,
     cache_path: str = None,
 ) -> CustomIndex | None:
     all_docs: list[Document] = snippets_to_docs(snippets, len_repo_cache_dir)
@@ -205,27 +204,26 @@ def compute_vector_search_scores(queries: list[str], snippets: list[Snippet]):
 
 
 def get_lexical_cache_key(
-    repo_directory: str, 
+    root_directory: str, 
     seed: str = ""
 ):
-    repo_directory = os.path.basename(repo_directory)
-    return f"{repo_directory}_{CACHE_VERSION}_{seed}"
+    root_directory = os.path.basename(root_directory)
+    return f"{root_directory}_{CACHE_VERSION}_{seed}"
 
 
 @streamable
 def prepare_lexical_search_index(
-    repo_directory: str,
+    root_directory: str,
     poirot_config: PoirotConfig,
-    do_not_use_file_cache: bool = False, # choose to not cache results
     seed: str = "" # used for lexical cache key
 ):
-    lexical_cache_key = get_lexical_cache_key(repo_directory, seed=seed)
+    lexical_cache_key = get_lexical_cache_key(root_directory, seed=seed)
 
     yield "Collecting snippets...", [], None
     snippets_results = snippets_cache.get(lexical_cache_key)
     if snippets_results is None:
         snippets, file_list = directory_to_chunks(
-            repo_directory, poirot_config
+            root_directory, poirot_config
         )
         snippets_cache[lexical_cache_key] = snippets, file_list
     else:
@@ -235,12 +233,25 @@ def prepare_lexical_search_index(
 
     index = prepare_index_from_snippets(
         snippets,
-        len_repo_cache_dir=len(repo_directory) + 1,
-        do_not_use_file_cache=do_not_use_file_cache,
+        len_repo_cache_dir=len(root_directory) + 1,
         cache_path=f"{CACHE_DIRECTORY}/lexical_index_cache/{lexical_cache_key}"
     )
-        # yield message, index
     
     yield "Lexical index built.", snippets, index
 
     return snippets, index
+
+if __name__ == "__main__":
+    root_directory = os.getenv("ROOT_DIRECTORY")
+    sweep_config = PoirotConfig()
+    assert root_directory
+    import time
+    start = time.time()
+    snippets , index = prepare_lexical_search_index(root_directory, sweep_config, start)
+    print(snippets, index)
+    result = search_index("logger export", index)
+    print("Time taken:", time.time() - start)
+    # print some of the keys
+    print(list(result.keys())[:5])
+    # print the first 2 result keys sorting by value
+    print(sorted(result.items(), key=lambda x: result.get(x, 0), reverse=True)[:5])

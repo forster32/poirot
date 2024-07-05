@@ -2,6 +2,7 @@ from hashlib import md5
 import multiprocessing
 
 import os
+from dotenv import load_dotenv
 
 from diskcache import Cache
 from loguru import logger
@@ -104,7 +105,8 @@ def file_path_to_chunks(file_path: str) -> list[str]:
     if content_hash in chunk_cache:
         return chunk_cache[content_hash]
     chunks = chunk_code(file_contents, path=file_path)
-    chunk_cache[content_hash] = chunks
+    if chunks:
+        chunk_cache[content_hash] = chunks
     return chunks
 
 
@@ -115,7 +117,6 @@ def directory_to_chunks(
 
     logger.info(f"Reading files from {directory}")
     chunked_files = set()
-    # TODO: refactor this to use Repository.get_file_list
     def traverse_dir(file_path: str = directory):
         only_file_name = os.path.basename(file_path)
         if only_file_name in ("node_modules", ".venv", "build", "venv", "patch"):
@@ -149,22 +150,19 @@ def directory_to_chunks(
             all_chunks.extend(chunks)
     return all_chunks, file_list
 
-# if __name__ == "__main__":
-#     try:
-#         from utils.github_utils import ClonedRepo, get_installation_id
-#         organization_name = "sweepai"
-        
-#         installation_id = get_installation_id(organization_name)
-#         cloned_repo = ClonedRepo("sweepai/sweep", installation_id, "main")
-#         poirot_config = PoirotConfig()
-#         chunks, file_list = directory_to_chunks(cloned_repo.repo_dir, poirot_config)
-#         # ensure no unallowed files are let through
-#         assert(not any([file for file in file_list if poirot_config.is_file_excluded(file)]))
-#         # pick 10 random files and turn them to chunks
-#         import random
-#         for _ in range(10):
-#             idx = random.randint(0, len(file_list) - 1)
-#             file_chunks = file_path_to_chunks(file_list[idx])
+if __name__ == "__main__":
+    # try:
+        poirot_config = PoirotConfig()
+        chunks, file_list = directory_to_chunks(os.getenv("ROOT_DIRECTORY"), poirot_config)
+        logger.info(file_list)
+        # ensure no unallowed files are let through
+        assert(not any([file for file in file_list if poirot_config.is_file_excluded(file)]))
+        # pick 10 random files and turn them to chunks
+        import random
+        for _ in range(10):
+            idx = random.randint(0, len(file_list) - 1)
+            file_chunks = file_path_to_chunks(file_list[idx])
 
-#     except Exception as e:
-#         logger.error(f"dir_parsing_utils.py failed to run successfully with error: {e}")
+    # except Exception as e:
+    #     print(e)
+    #     logger.error(f"dir_parsing_utils.py failed to run successfully with error: {e}")
