@@ -149,20 +149,3 @@ def directory_to_chunks(
         for chunks in tqdm(pool.imap(file_path_to_chunks, file_list), total=len(file_list), desc="Chunking files"):
             all_chunks.extend(chunks)
     return all_chunks, file_list
-
-if __name__ == "__main__":
-    # try:
-        poirot_config = PoirotConfig()
-        chunks, file_list = directory_to_chunks(os.getenv("ROOT_DIRECTORY"), poirot_config)
-        logger.info(file_list)
-        # ensure no unallowed files are let through
-        assert(not any([file for file in file_list if poirot_config.is_file_excluded(file)]))
-        # pick 10 random files and turn them to chunks
-        import random
-        for _ in range(10):
-            idx = random.randint(0, len(file_list) - 1)
-            file_chunks = file_path_to_chunks(file_list[idx])
-
-    # except Exception as e:
-    #     print(e)
-    #     logger.error(f"dir_parsing_utils.py failed to run successfully with error: {e}")

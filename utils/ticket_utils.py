@@ -526,33 +526,3 @@ def fetch_relevant_files(
         # logger.exception()
     #     raise e
     return repo_context_manager
-
-
-if __name__ == "__main__":
-    import os
-
-    repository_directory = os.getenv("ROOT_DIRECTORY")
-
-    # title = "when I call openai chat, I want to get the token cost of the completion."
-    # summary = "I want to get the token cost of the completion when I call openai chat. Please help me with this."
-
-    title = "I want to add a field called 'description' to the table database table 'thread'."
-
-    # title = "我想要增加一个字段：用户级别，在用户创建 thread 数量达到一定数量时，用户级别会提升。"
-
-
-    summary = ""
-    replies_text=""
-
-    repository = Repository(repository_directory)
-
-    logger.info("Fetching relevant files")
-    for message, repo_context_manager in fetch_relevant_files.stream(repository, title, summary, replies_text):
-      logger.info(message)
-
-    print("-----return---------")
-    print("current_top_snippets: ", repo_context_manager.current_top_snippets)
-    print("read_only_snippets: ", repo_context_manager.read_only_snippets)
-    
-
-    print("-----end---------")

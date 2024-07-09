@@ -6,28 +6,12 @@ from dataclasses import dataclass
 
 from loguru import logger
 from tree_sitter import Node, Parser, Language
-from tree_sitter_languages import get_parser as tree_sitter_get_parser
-import tree_sitter_python
-import tree_sitter_javascript
-import tree_sitter_go
+from tree_sitter_languages import get_parser
 
 
 from core.entities import Snippet
 
 AVG_CHAR_IN_LINE = 60
-
-def get_parser(language: str):
-    if language in ("python", "py"):
-        lang = Language(tree_sitter_python.language())
-    elif language in ("javascript", "js"):
-        lang = Language(tree_sitter_javascript.language())
-    elif language in ("golang", "go"):
-        lang = Language(tree_sitter_go.language())
-    else:
-        return tree_sitter_get_parser(language)
-    parser = Parser(lang)
-    return parser
-
 
 @dataclass
 class Span:

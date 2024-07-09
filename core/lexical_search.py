@@ -44,8 +44,6 @@ def tokenize_code(code: str) -> str:
             for part in variable_pattern.findall(section):
                 if len(part) < 2:
                     continue
-                # if len(part) < 5:
-                #     tokens.append(part.lower())
                 # if more than half of the characters are letters 
                 # and the ratio of unique characters to the number of characters is less than 5
                 if sum(1 for c in part if 'a' <= c <= 'z' or 'A' <= c <= 'Z' or '0' <= c <= '9') > len(part) // 2 \
@@ -240,18 +238,3 @@ def prepare_lexical_search_index(
     yield "Lexical index built.", snippets, index
 
     return snippets, index
-
-if __name__ == "__main__":
-    root_directory = os.getenv("ROOT_DIRECTORY")
-    sweep_config = PoirotConfig()
-    assert root_directory
-    import time
-    start = time.time()
-    snippets , index = prepare_lexical_search_index(root_directory, sweep_config, start)
-    print(snippets, index)
-    result = search_index("logger export", index)
-    print("Time taken:", time.time() - start)
-    # print some of the keys
-    print(list(result.keys())[:5])
-    # print the first 2 result keys sorting by value
-    print(sorted(result.items(), key=lambda x: result.get(x, 0), reverse=True)[:5])
