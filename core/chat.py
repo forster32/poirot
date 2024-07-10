@@ -1,4 +1,3 @@
-import os
 from typing import Literal, Iterator
 
 from openai import OpenAI

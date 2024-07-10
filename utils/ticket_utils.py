@@ -22,7 +22,6 @@ from dataclass.separatedsnippets import SeparatedSnippets
 from utils.repository_utils import Repository
 from utils.streamable_functions import streamable
 from utils.timer import Timer
-from utils.multi_query import generate_multi_queries
 from utils.openai_listwise_reranker import listwise_rerank_snippets
 
 
@@ -412,12 +411,9 @@ def multi_prep_snippets(
 @streamable
 def prep_snippets(
     repository,
-    query,
+    queries,
     top_k: int = 15,
 ) -> list[Snippet]:
-    queries = [query, *generate_multi_queries(query)]
-    yield "Finished generating search queries, performing lexical search...\n", []
-
     for message, snippets in multi_prep_snippets.stream(
         repository, queries, top_k
     ):
@@ -486,20 +482,13 @@ def get_relevant_context(
 
 @streamable
 def fetch_relevant_files(
-    repository,
-    title,
-    summary,
-    replies_text,
+    search_queries,
+    formatted_query
 ):
     logger.info("Fetching relevant files")
-    # try:
-    search_query = f"{title}\n{summary}\n{replies_text}".strip("\n")
-    replies_text = f"\n{replies_text}" if replies_text else ""
-    formatted_query = (f"{title.strip()}\n{summary.strip()}" + replies_text).strip(
-        "\n"
-    )
-    
-    for message, ranked_snippets in prep_snippets.stream(repository, search_query):
+    repository = Repository()
+
+    for message, ranked_snippets in prep_snippets.stream(repository, search_queries):
         repo_context_manager = RepoContextManager(
             repository=repository,
             current_top_snippets=ranked_snippets,
@@ -508,7 +497,7 @@ def fetch_relevant_files(
         yield message, repo_context_manager
     
 
-    parse_query_for_files(search_query, repo_context_manager)
+    parse_query_for_files(search_queries[0], repo_context_manager)
     repo_context_manager = add_relevant_files_to_top_snippets(repo_context_manager)
 
     yield "Here are the files I've found so far. I'm currently selecting a subset of the files to edit.\n", repo_context_manager
