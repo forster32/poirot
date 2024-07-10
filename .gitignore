@@ -9,7 +9,7 @@ __pycache__/
 .vscode/**
 
 # 解析缓存
-caches
+.agent_caches
 
 # Environments
 .env
