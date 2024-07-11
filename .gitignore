@@ -10,6 +10,10 @@ __pycache__/
 
 # 解析缓存
 .agent_caches
+# pyinstaller
+build
+dist
+ticket_utils.spec
 
 # Environments
 .env

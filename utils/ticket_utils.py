@@ -505,13 +505,20 @@ def fetch_relevant_files(
     repo_context_manager = get_relevant_context(
         formatted_query,
         repo_context_manager,
-        # ticket_progress,
-        # chat_logger=chat_logger,
-        # import_graph=import_graph,
-        # images=images
     )
     yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
-    # except Exception as e:
-        # logger.exception()
-    #     raise e
+
     return repo_context_manager
+
+if __name__ == "__main__":
+
+    search_queries = ["I want to add a field called 'description' to the table database table 'thread'."]
+    formatted_query = "I want to add a field called 'description' to the table database table 'thread'."
+
+    logger.info("Fetching relevant files")
+    for message, repo_context_manager in fetch_relevant_files.stream(search_queries=search_queries, formatted_query=formatted_query):
+      logger.info(message)
+
+    print("current_top_snippets: ", repo_context_manager.current_top_snippets)
+    print("read_only_snippets: ", repo_context_manager.read_only_snippets)
+    print("-----end---------")
