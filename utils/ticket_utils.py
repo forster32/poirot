@@ -502,11 +502,12 @@ def fetch_relevant_files(
 
     yield "Here are the files I've found so far. I'm currently selecting a subset of the files to edit.\n", repo_context_manager
 
-    repo_context_manager = get_relevant_context(
-        formatted_query,
-        repo_context_manager,
-    )
-    yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
+    # FIXME: remove to agent
+    # repo_context_manager = get_relevant_context(
+    #     formatted_query,
+    #     repo_context_manager,
+    # )
+    # yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
 
     return repo_context_manager
 
