@@ -51,6 +51,37 @@ class Snippet(BaseModel):
             if self.end < self.content.count("\n") + 1:
                 snippet = snippet + "\n..."
         return snippet
+    
+    def __add__(self, other):
+        assert self.content == other.content
+        assert self.file_path == other.file_path
+        return Snippet(
+            content=self.content,
+            start=self.start,
+            end=other.end,
+            file_path=self.file_path,
+        )
+
+    def __xor__(self, other: "Snippet") -> bool:
+        """
+        Returns True if there is an overlap between two snippets.
+        """
+        if self.file_path != other.file_path:
+            return False
+        return self.file_path == other.file_path and (
+            (self.start <= other.start and self.end >= other.start)
+            or (other.start <= self.start and other.end >= self.start)
+        )
+
+    def __or__(self, other: "Snippet") -> "Snippet":
+        assert self.file_path == other.file_path
+        return Snippet(
+            content=self.content,
+            start=min(self.start, other.start),
+            end=max(self.end, other.end),
+            file_path=self.file_path,
+        )
+
 
     def expand(self, num_lines: int = 25):
         return Snippet(
