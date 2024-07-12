@@ -21,6 +21,7 @@ python-dotenv = "^1.0.1"
 tree-sitter-go = "^0.21.0"
 pika = "^1.2.0"
 pyinstaller = "^6.9.0"
+scipy = "^1.14.0"
 
 
 [build-system]
