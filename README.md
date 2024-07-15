@@ -1,12 +1,12 @@
 # Poirot
 Provide retrieval to heracles
 
-# started
+# start
 
 install conda  [Miniconda](https://docs.anaconda.com/miniconda/)
 
 ```sh
-# Installation dependency
+# Install dependency
 conda create -n poirot python=3.11
 conda activate poirot
 
