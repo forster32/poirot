@@ -3,10 +3,11 @@ import os
 from dataclasses import dataclass
 
 from config.client import PoirotConfig
+from config.server import ROOT_DIRECTORY
 
 @dataclass
 class Repository:
-    root_directory: str
+    root_directory=ROOT_DIRECTORY
 
     def get_file_list(self):
         files = []

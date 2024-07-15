@@ -22,7 +22,6 @@ from dataclass.separatedsnippets import SeparatedSnippets
 from utils.repository_utils import Repository
 from utils.streamable_functions import streamable
 from utils.timer import Timer
-from utils.multi_query import generate_multi_queries
 from utils.openai_listwise_reranker import listwise_rerank_snippets
 
 
@@ -305,11 +304,10 @@ def multi_prep_snippets(
         ):
             yield message, []
         # Use RRF to rerank snippets
-        rank_fusion_offset = 0
         content_to_lexical_score = defaultdict(float)
         for i, ordered_snippets in enumerate(ranked_snippets_list):
             for j, snippet in enumerate(ordered_snippets):
-                content_to_lexical_score[snippet.denotation] += content_to_lexical_score_list[i][snippet.denotation] * (1 / 2 ** (rank_fusion_offset + j))
+                content_to_lexical_score[snippet.denotation] += content_to_lexical_score_list[i][snippet.denotation] * (1 / 2 ** (j))
         ranked_snippets = sorted(
             snippets,
             key=lambda snippet: content_to_lexical_score[snippet.denotation],
@@ -412,12 +410,9 @@ def multi_prep_snippets(
 @streamable
 def prep_snippets(
     repository,
-    query,
+    queries,
     top_k: int = 15,
 ) -> list[Snippet]:
-    queries = [query, *generate_multi_queries(query)]
-    yield "Finished generating search queries, performing lexical search...\n", []
-
     for message, snippets in multi_prep_snippets.stream(
         repository, queries, top_k
     ):
@@ -486,20 +481,12 @@ def get_relevant_context(
 
 @streamable
 def fetch_relevant_files(
-    repository,
-    title,
-    summary,
-    replies_text,
+    search_queries
 ):
     logger.info("Fetching relevant files")
-    # try:
-    search_query = f"{title}\n{summary}\n{replies_text}".strip("\n")
-    replies_text = f"\n{replies_text}" if replies_text else ""
-    formatted_query = (f"{title.strip()}\n{summary.strip()}" + replies_text).strip(
-        "\n"
-    )
-    
-    for message, ranked_snippets in prep_snippets.stream(repository, search_query):
+    repository = Repository()
+
+    for message, ranked_snippets in prep_snippets.stream(repository, search_queries):
         repo_context_manager = RepoContextManager(
             repository=repository,
             current_top_snippets=ranked_snippets,
@@ -508,51 +495,30 @@ def fetch_relevant_files(
         yield message, repo_context_manager
     
 
-    parse_query_for_files(search_query, repo_context_manager)
+    parse_query_for_files(search_queries[0], repo_context_manager)
     repo_context_manager = add_relevant_files_to_top_snippets(repo_context_manager)
 
     yield "Here are the files I've found so far. I'm currently selecting a subset of the files to edit.\n", repo_context_manager
 
-    repo_context_manager = get_relevant_context(
-        formatted_query,
-        repo_context_manager,
-        # ticket_progress,
-        # chat_logger=chat_logger,
-        # import_graph=import_graph,
-        # images=images
-    )
-    yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
-    # except Exception as e:
-        # logger.exception()
-    #     raise e
+    # FIXME: remove to agent
+    # repo_context_manager = get_relevant_context(
+    #     formatted_query,
+    #     repo_context_manager,
+    # )
+    # yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
+
     return repo_context_manager
 
-
 if __name__ == "__main__":
-    import os
 
-    repository_directory = os.getenv("ROOT_DIRECTORY")
-
-    # title = "when I call openai chat, I want to get the token cost of the completion."
-    # summary = "I want to get the token cost of the completion when I call openai chat. Please help me with this."
-
-    title = "I want to add a field called 'description' to the table database table 'thread'."
-
-    # title = "我想要增加一个字段：用户级别，在用户创建 thread 数量达到一定数量时，用户级别会提升。"
-
-
-    summary = ""
-    replies_text=""
-
-    repository = Repository(repository_directory)
+    print("-----start---------")
+    search_queries = ['我想知道项目有没有使用 GPT4,\n为了确保项目的费用支出，我需要知道项目是否使用了 open ai api的 GPT4。', 'Where is the API client module that handles the integration with external AI services, specifically looking for any methods or functions making calls to the OpenAI GPT-4 model?', 'Where are the configuration settings that store the API keys and endpoints for OpenAI services, particularly those related to GPT-4 usage?', 'Where in the environment variable configurations do we define the API keys or feature toggles that control the activation of GPT-4 from OpenAI?', 'Where is the logging configuration that tracks external API calls, specifically those to OpenAI, and does it include detailed tracking suitable for budget analysis?', 'Which utility functions are used to wrap calls to the OpenAI API, and how do these distinguish between different models like GPT-3 and GPT-4?', 'Where can I find any inline documentation or comments in the codebase that mention the use of OpenAI’s GPT-4 model?', 'How is error handling managed for OpenAI API requests, especially those requesting the GPT-4 model, and what fallback mechanisms are in place?', 'Where are the tests that mock OpenAI API responses, specifically those tests that simulate interactions with the GPT-4 model, and what data are they using?', 'What entries in the dependency management files are related to OpenAI, and do they specify libraries or SDKs that support GPT-4?', 'Where is the monitoring setup that tracks API usage metrics, and how can it be configured to report detailed usage statistics for GPT-4 to aid in budget management?']
+    # search_queries = ['根据我的项目功能完善 readme\n我想要完善我的项目的 readme 文件，请根据项目的功能和特性帮我完善 readme 文件。', 'Where is the module description for the user authentication process in the backend service, including any specific security protocols it adheres to?', 'Where is the listing of API endpoints implemented in the project, including the methods (GET, POST, etc.) and expected request and response formats?', 'Where are the user interface components and their interaction flows documented, particularly those involving user registration and data submission?', 'Where can I find the configuration settings and environment variables required for initial project setup, including any necessary API keys or database connections?', 'Where is the dependency list that outlines all external libraries and frameworks used in the project, along with their version numbers and purposes?', 'Where are the installation instructions that include steps for setting up the project locally on different operating systems (Windows, macOS, Linux)?', 'Where can I find code examples that demonstrate how to use main features of the project, ideally with comments explaining critical sections?', 'Where is the project’s licensing information, specifically the file or section that details the terms under which the project’s software is released?', 'Where are the contribution guidelines that explain how to fork the repository, create feature branches, and submit pull requests?', 'Where are the contact details or community links (like a Slack channel or forum) provided for users needing support or wishing to discuss the project?']
 
     logger.info("Fetching relevant files")
-    for message, repo_context_manager in fetch_relevant_files.stream(repository, title, summary, replies_text):
+    for message, repo_context_manager in fetch_relevant_files.stream(search_queries):
       logger.info(message)
 
-    print("-----return---------")
     print("current_top_snippets: ", repo_context_manager.current_top_snippets)
     print("read_only_snippets: ", repo_context_manager.read_only_snippets)
-    
-
     print("-----end---------")

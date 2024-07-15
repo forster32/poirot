@@ -2,22 +2,10 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 class Message(BaseModel):
-    # role: (
-    #     Literal["system"] | Literal["user"] | Literal["assistant"] | Literal["function"]
-    # )
     role: Literal["system", "user", "assistant", "function"]
     content: str | None = None
     name: str | None = None
     function_call: dict | None = None
-    key: str | None = None
-    annotations: dict | None = None
-
-    # @classmethod
-    # def from_tuple(cls, tup: tuple[str | None, str | None]) -> Self:
-    #     if tup[0] is None:
-    #         return cls(role="assistant", content=tup[1])
-    #     else:
-    #         return cls(role="user", content=tup[0])
 
     def to_openai(self) -> str:
         obj = {
@@ -63,6 +51,37 @@ class Snippet(BaseModel):
             if self.end < self.content.count("\n") + 1:
                 snippet = snippet + "\n..."
         return snippet
+    
+    def __add__(self, other):
+        assert self.content == other.content
+        assert self.file_path == other.file_path
+        return Snippet(
+            content=self.content,
+            start=self.start,
+            end=other.end,
+            file_path=self.file_path,
+        )
+
+    def __xor__(self, other: "Snippet") -> bool:
+        """
+        Returns True if there is an overlap between two snippets.
+        """
+        if self.file_path != other.file_path:
+            return False
+        return self.file_path == other.file_path and (
+            (self.start <= other.start and self.end >= other.start)
+            or (other.start <= self.start and other.end >= self.start)
+        )
+
+    def __or__(self, other: "Snippet") -> "Snippet":
+        assert self.file_path == other.file_path
+        return Snippet(
+            content=self.content,
+            start=min(self.start, other.start),
+            end=max(self.end, other.end),
+            file_path=self.file_path,
+        )
+
 
     def expand(self, num_lines: int = 25):
         return Snippet(
