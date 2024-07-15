@@ -31,7 +31,6 @@ schema_builder.add_text_field("body", stored=True)
 schema_builder.add_integer_field("doc_id", stored=True)
 schema = schema_builder.build()
 
-
 variable_pattern = re.compile(r"([A-Z][a-z]+|[a-z]+|[A-Z]+(?=[A-Z]|$))")
 
 def tokenize_code(code: str) -> str:
