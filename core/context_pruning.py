@@ -1,25 +1,10 @@
-from copy import deepcopy
-from math import log
-import subprocess
 import urllib
 from dataclasses import dataclass, field
 
-# import networkx as nx
-# import openai
 from loguru import logger
-# from openai.types.beta.thread import Thread
-# from openai.types.beta.threads.run import Run
 
-from config.client import PoirotConfig
-from core.chat import ChatGPT
-from core.entities import Message, Snippet
-# from logn.cache import file_cache
-# from utils.chat_logger import ChatLogger
+from core.entities import Snippet
 from utils.repository_utils import Repository
-# from utils.ripgrep_utils import post_process_rg_output
-# from utils.openai_listwise_reranker import listwise_rerank_snippets
-# from utils.progress import AssistantConversation, TicketProgress
-from utils.tree_utils import DirectoryTree
 
 ASSISTANT_MAX_CHARS = 4096 * 4 * 0.95  # ~95% of 4k tokens
 NUM_SNIPPETS_TO_SHOW_AT_START = 15
@@ -59,59 +44,10 @@ class RepoContextManager:
     )  # a list of file paths that appear in the user query
     # UNUSED:
     snippets: list[Snippet] = field(default_factory=list) # This is actually used in benchmarks
-    snippet_scores: dict[str, float] = field(default_factory=dict)
-    current_top_tree: str | None = None
-    dir_obj: DirectoryTree | None = None
 
     @property
     def top_snippet_paths(self):
         return [snippet.file_path for snippet in self.current_top_snippets]
-
-    @property
-    def relevant_read_only_snippet_paths(self):
-        return [snippet.file_path for snippet in self.read_only_snippets]
-
-    def format_context(
-        self,
-        unformatted_user_prompt: str,
-        query: str,
-    ):
-        files_in_repo_str = ""
-        stored_files = set()
-        for idx, snippet in enumerate(list(dict.fromkeys(self.current_top_snippets))[:NUM_SNIPPETS_TO_SHOW_AT_START]):
-            if snippet.file_path in stored_files:
-                continue
-            stored_files.add(snippet.file_path)
-            snippet_str = \
-f'''
-<stored_file index="{idx + 1}">
-<file_path>{snippet.file_path}</file_path>
-<source>
-{snippet.content}
-</source>
-</stored_file>
-'''
-            files_in_repo_str += snippet_str
-        repo_tree = str(self.dir_obj)
-        import_tree_prompt = """
-## Import trees for code files in the user request
-<import_trees>
-{import_trees}
-</import_trees>
-"""
-        import_tree_prompt = (
-            import_tree_prompt.format(import_trees=self.import_trees.strip("\n"))
-            if self.import_trees
-            else ""
-        )
-        user_prompt = unformatted_user_prompt.format(
-            query=query,
-            snippets_in_repo=files_in_repo_str,
-            repo_tree=repo_tree,
-            import_tree_prompt=import_tree_prompt,
-            file_paths_in_query=", ".join(self.relevant_file_paths),
-        )
-        return user_prompt
 
     def add_snippets(self, snippets_to_add: list[Snippet]):
         # self.dir_obj.add_file_paths([snippet.file_path for snippet in snippets_to_add])
@@ -200,57 +136,6 @@ def add_relevant_files_to_top_snippets(rcm: RepoContextManager) -> RepoContextMa
                 )
     return rcm
 
-def generate_import_graph_text(graph):
-  # Create a dictionary to store the import relationships
-  import_dict = {}
-
-  # Iterate over each node (file) in the graph
-  for node in graph.nodes():
-    # Get the files imported by the current file
-    imported_files = list(graph.successors(node))
-
-    # Add the import relationships to the dictionary
-    if imported_files:
-      import_dict[node] = imported_files
-    else:
-      import_dict[node] = []
-
-  # Generate the text-based representation
-  final_text = ""
-  visited_files = set()
-  for file, imported_files in sorted(import_dict.items(), key=lambda x: x[0]):
-    if file not in visited_files:
-      final_text += generate_file_imports(graph, file, visited_files, "")
-      final_text += "\n"
-
-  # Add files that are not importing any other files
-  non_importing_files = [
-      file for file, imported_files in import_dict.items()
-      if not imported_files and file not in visited_files
-  ]
-  if non_importing_files:
-    final_text += "\n".join(non_importing_files)
-
-  return final_text
-
-
-def generate_file_imports(graph,
-                          file,
-                          visited_files,
-                          last_successor,
-                          indent_level=0):
-  # if you just added this file as a successor, you don't need to add it again
-  visited_files.add(file)
-  text = "  " * indent_level + f"{file}\n" if file != last_successor else ""
-
-  for imported_file in graph.successors(file):
-    text += "  " * (indent_level + 1) + f"──> {imported_file}\n"
-    if imported_file not in visited_files:
-      text += generate_file_imports(graph, imported_file, visited_files,
-                                    imported_file, indent_level + 2)
-
-  return text
-
 # fetch all files mentioned in the user query
 def parse_query_for_files(
     query: str, rcm: RepoContextManager
@@ -281,66 +166,3 @@ def parse_query_for_files(
     for code_file in code_files_to_add[:MAX_FILES_TO_ADD]:
         rcm.append_relevant_file_paths(code_file)
     return rcm, None
-
-
-# do not ignore repo_context_manager
-# @file_cache(ignore_params=["seed", "ticket_progress", "chat_logger"])
-def get_relevant_context(
-    query: str,
-    repo_context_manager: RepoContextManager,
-    seed: int = None,
-    # import_graph: nx.DiGraph = None,
-    num_rollouts: int = NUM_ROLLOUTS,
-    ticket_progress = None,
-    chat_logger = None,
-) -> RepoContextManager:
-    logger.info("Seed: " + str(seed))
-    try:
-        # for any code file mentioned in the query, build its import tree - This is currently not used
-        repo_context_manager = build_import_trees(
-            repo_context_manager,
-            # import_graph,
-        )
-        # for any code file mentioned in the query add it to the top relevant snippets
-        repo_context_manager = add_relevant_files_to_top_snippets(repo_context_manager)
-        # add relevant files to dir_obj inside repo_context_manager, this is in case dir_obj is too large when as a string
-        repo_context_manager.dir_obj.add_relevant_files(
-            repo_context_manager.relevant_file_paths
-        )
-
-        user_prompt = repo_context_manager.format_context(
-            unformatted_user_prompt=unformatted_user_prompt,
-            query=query,
-        )
-        return repo_context_manager
-    except Exception as e:
-        logger.exception(e)
-        return repo_context_manager
-
-# if __name__ == "__main__":
-#     try:
-#         from utils.github_utils import get_installation_id
-#         from utils.ticket_utils import prep_snippets
-
-#         organization_name = "sweepai"
-#         installation_id = get_installation_id(organization_name)
-#         cloned_repo = ClonedRepo("sweepai/sweep", installation_id, "main")
-#         query = "allow 'sweep.yaml' to be read from the user/organization's .github repository. this is found in client.py and we need to change this to optionally read from .github/sweep.yaml if it exists there"
-#         # golden response is
-#         # sweepai/handlers/create_pr.py:401-428
-#         # sweepai/config/client.py:178-282
-#         ticket_progress = TicketProgress(
-#             tracking_id="test",
-#         )
-#         snippets = prep_snippets(cloned_repo, query, ticket_progress)
-#         rcm = get_relevant_context(
-#             query,
-#             snippets, # THIS SHOULD BE BROKEN
-#             ticket_progress,
-#             chat_logger=ChatLogger({"username": "wwzeng1"}),
-#         )
-#         for snippet in rcm.current_top_snippets:
-#             print(snippet.denotation)
-#     except Exception as e:
-#         logger.error(f"context_pruning.py failed to run successfully with error: {e}")
-#         raise e
