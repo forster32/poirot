@@ -3,7 +3,7 @@ Provide retrieval to heracles
 
 # start
 
-install conda  [Miniconda](https://docs.anaconda.com/miniconda/)
+Install conda  [Miniconda](https://docs.anaconda.com/miniconda/)
 
 ```sh
 # Install dependency
@@ -12,7 +12,7 @@ conda activate poirot
 
 pip install poetry
 
-# Prepare for configuration
+# Prepare for env
 cp .env.example .env
 
 # Rush!
