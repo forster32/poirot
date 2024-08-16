@@ -320,87 +320,88 @@ def multi_prep_snippets(
             yield message, ranked_snippets
     separated_snippets = separate_snippets_by_type(snippets)
     yield f"Retrieved top {top_k} snippets, currently reranking:\n", ranked_snippets
-    if not skip_pointwise_reranking:
-        all_snippets = []
-        if "junk" in separated_snippets:
-            separated_snippets.override_list("junk", [])
-        for type_name, snippets_subset in separated_snippets:
-            if len(snippets_subset) == 0:
-                continue
-            separated_snippets.override_list(type_name, sorted(
-                snippets_subset,
-                key=lambda snippet: content_to_lexical_score[snippet.denotation],
-                reverse=True,
-            )[:rerank_count[type_name]])
-        new_content_to_lexical_score_by_type = {}
-
-        with Timer() as timer:
-            try:
-                with ThreadPoolExecutor() as executor:
-                    future_to_type = {executor.submit(process_snippets, type_name, queries[0], snippets_subset, content_to_lexical_score, NUM_SNIPPETS_TO_KEEP, rerank_count[type_name], {}): type_name for type_name, snippets_subset in separated_snippets}
-                    for future in concurrent.futures.as_completed(future_to_type):
-                        type_name = future_to_type[future]
-                        new_content_to_lexical_score_by_type[type_name] = future.result()[1]
-            except RuntimeError as e:
-                # Fallback to sequential processing
-                logger.warning(e)
-                for type_name, snippets_subset in separated_snippets:
-                    new_content_to_lexical_score_by_type[type_name] = process_snippets(type_name, queries[0], snippets_subset, content_to_lexical_score, NUM_SNIPPETS_TO_KEEP, rerank_count[type_name], {})[1]
-        logger.info(f"Reranked snippets took {timer.time_elapsed} seconds")
-
-        for type_name, snippets_subset in separated_snippets:
-            new_content_to_lexical_scores = new_content_to_lexical_score_by_type[type_name]
-            for snippet in snippets_subset:
-                snippet.score = new_content_to_lexical_scores[snippet.denotation]
-            # set all keys of new_content_to_lexical_scores to content_to_lexical_score
-            for key in new_content_to_lexical_scores:
-                content_to_lexical_score[key] = new_content_to_lexical_scores[key]
-            snippets_subset = sorted(
-                snippets_subset,
-                key=lambda snippet: new_content_to_lexical_scores[snippet.denotation],
-                reverse=True,
-            )
-            separated_snippets.override_list(attribute_name=type_name, new_list=snippets_subset)
-            logger.info(f"Reranked {type_name}")
-            # cutoff snippets at percentile
-            logger.info("Kept these snippets")
-            if not snippets_subset:
-                continue
-            top_score = snippets_subset[0].score
-            logger.debug(f"Top score for {type_name}: {top_score}")
-            max_results = type_to_result_count[type_name]
-            filtered_subset_snippets = []
-            for idx, snippet in enumerate(snippets_subset[:max_results]):
-                percentile = 0 if top_score == 0 else snippet.score / top_score
-                if percentile < type_to_percentile_floor[type_name] or snippet.score < type_to_score_floor[type_name]:
-                    break 
-                logger.info(f"{idx}: {snippet.denotation} {snippet.score} {percentile}")
-                snippet.type_name = type_name
-                filtered_subset_snippets.append(snippet)
-            if type_name != "source" and filtered_subset_snippets and not skip_analyze_agent: # do more filtering
-                filtered_subset_snippets = AnalyzeSnippetAgent().analyze_snippets(filtered_subset_snippets, type_name, queries[0])
-            logger.info(f"Length of filtered subset snippets for {type_name}: {len(filtered_subset_snippets)}")
-            all_snippets.extend(filtered_subset_snippets)
-        # if there are no snippets because all of them have been filtered out we will fall back to adding the highest rated ones
-        # only do this for source files
-        if not all_snippets:
-            for type_name, snippets_subset in separated_snippets:
-                # only use source files unless there are none in which case use all snippets
-                if type_name != "source" and separated_snippets.source:
-                    continue
-                max_results = type_to_result_count[type_name]
-                all_snippets.extend(snippets_subset[:max_results])
-
-        all_snippets.sort(key=lambda snippet: snippet.score, reverse=True)
-        ranked_snippets = all_snippets[:top_k]
-        yield "Finished reranking, here are the relevant final search results:\n", ranked_snippets
-    else:
-        ranked_snippets = sorted(
-            snippets,
+    # if not skip_pointwise_reranking:
+    all_snippets = []
+    if "junk" in separated_snippets:
+        separated_snippets.override_list("junk", [])
+    for type_name, snippets_subset in separated_snippets:
+        if len(snippets_subset) == 0:
+            continue
+        separated_snippets.override_list(type_name, sorted(
+            snippets_subset,
             key=lambda snippet: content_to_lexical_score[snippet.denotation],
             reverse=True,
-        )[:top_k]
-        yield "Finished reranking, here are the relevant final search results:\n", ranked_snippets
+        )[:rerank_count[type_name]])
+    new_content_to_lexical_score_by_type = {}
+
+    with Timer() as timer:
+        try:
+            with ThreadPoolExecutor() as executor:
+                future_to_type = {executor.submit(process_snippets, type_name, queries[0], snippets_subset, content_to_lexical_score, NUM_SNIPPETS_TO_KEEP, rerank_count[type_name], {}): type_name for type_name, snippets_subset in separated_snippets}
+                for future in concurrent.futures.as_completed(future_to_type):
+                    type_name = future_to_type[future]
+                    new_content_to_lexical_score_by_type[type_name] = future.result()[1]
+        except RuntimeError as e:
+            # Fallback to sequential processing
+            logger.warning(e)
+            for type_name, snippets_subset in separated_snippets:
+                new_content_to_lexical_score_by_type[type_name] = process_snippets(type_name, queries[0], snippets_subset, content_to_lexical_score, NUM_SNIPPETS_TO_KEEP, rerank_count[type_name], {})[1]
+    logger.info(f"Reranked snippets took {timer.time_elapsed} seconds")
+
+    for type_name, snippets_subset in separated_snippets:
+        new_content_to_lexical_scores = new_content_to_lexical_score_by_type[type_name]
+        for snippet in snippets_subset:
+            snippet.score = new_content_to_lexical_scores[snippet.denotation]
+        # set all keys of new_content_to_lexical_scores to content_to_lexical_score
+        for key in new_content_to_lexical_scores:
+            content_to_lexical_score[key] = new_content_to_lexical_scores[key]
+        snippets_subset = sorted(
+            snippets_subset,
+            key=lambda snippet: new_content_to_lexical_scores[snippet.denotation],
+            reverse=True,
+        )
+        separated_snippets.override_list(attribute_name=type_name, new_list=snippets_subset)
+        logger.info(f"Reranked {type_name}")
+        # cutoff snippets at percentile
+        logger.info("Kept these snippets")
+        if not snippets_subset:
+            continue
+        top_score = snippets_subset[0].score
+        logger.debug(f"Top score for {type_name}: {top_score}")
+        max_results = type_to_result_count[type_name]
+        filtered_subset_snippets = []
+        for idx, snippet in enumerate(snippets_subset[:max_results]):
+            percentile = 0 if top_score == 0 else snippet.score / top_score
+            if percentile < type_to_percentile_floor[type_name] or snippet.score < type_to_score_floor[type_name]:
+                break 
+            logger.info(f"{idx}: {snippet.denotation} {snippet.score} {percentile}")
+            snippet.type_name = type_name
+            filtered_subset_snippets.append(snippet)
+        # FIXME: filter snippets by llm
+        # if type_name != "source" and filtered_subset_snippets and not skip_analyze_agent: # do more filtering
+        #     filtered_subset_snippets = AnalyzeSnippetAgent().analyze_snippets(filtered_subset_snippets, type_name, queries[0])
+        logger.info(f"Length of filtered subset snippets for {type_name}: {len(filtered_subset_snippets)}")
+        all_snippets.extend(filtered_subset_snippets)
+    # if there are no snippets because all of them have been filtered out we will fall back to adding the highest rated ones
+    # only do this for source files
+    if not all_snippets:
+        for type_name, snippets_subset in separated_snippets:
+            # only use source files unless there are none in which case use all snippets
+            if type_name != "source" and separated_snippets.source:
+                continue
+            max_results = type_to_result_count[type_name]
+            all_snippets.extend(snippets_subset[:max_results])
+
+    all_snippets.sort(key=lambda snippet: snippet.score, reverse=True)
+    ranked_snippets = all_snippets[:top_k]
+    yield "Finished reranking, here are the relevant final search results:\n", ranked_snippets
+    # else:
+    #     ranked_snippets = sorted(
+    #         snippets,
+    #         key=lambda snippet: content_to_lexical_score[snippet.denotation],
+    #         reverse=True,
+    #     )[:top_k]
+    #     yield "Finished reranking, here are the relevant final search results:\n", ranked_snippets
     # you can use snippet.denotation and snippet.get_snippet()
     # TODO check skip_pointwise_reranking
     if not skip_reranking and skip_pointwise_reranking:
@@ -500,20 +501,34 @@ def fetch_relevant_files(
 
     yield "Here are the files I've found so far. I'm currently selecting a subset of the files to edit.\n", repo_context_manager
 
-    # FIXME: remove to agent
-    # repo_context_manager = get_relevant_context(
-    #     formatted_query,
-    #     repo_context_manager,
-    # )
-    # yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
+    repo_context_manager = get_relevant_context(
+        search_queries[0],
+        repo_context_manager,
+    )
+    yield "Here are the code search results. I'm now analyzing these search results to write the PR.\n", repo_context_manager
 
     return repo_context_manager
 
 if __name__ == "__main__":
 
     print("-----start---------")
-    search_queries = ['我想知道项目有没有使用 GPT4,\n为了确保项目的费用支出，我需要知道项目是否使用了 open ai api的 GPT4。', 'Where is the API client module that handles the integration with external AI services, specifically looking for any methods or functions making calls to the OpenAI GPT-4 model?', 'Where are the configuration settings that store the API keys and endpoints for OpenAI services, particularly those related to GPT-4 usage?', 'Where in the environment variable configurations do we define the API keys or feature toggles that control the activation of GPT-4 from OpenAI?', 'Where is the logging configuration that tracks external API calls, specifically those to OpenAI, and does it include detailed tracking suitable for budget analysis?', 'Which utility functions are used to wrap calls to the OpenAI API, and how do these distinguish between different models like GPT-3 and GPT-4?', 'Where can I find any inline documentation or comments in the codebase that mention the use of OpenAI’s GPT-4 model?', 'How is error handling managed for OpenAI API requests, especially those requesting the GPT-4 model, and what fallback mechanisms are in place?', 'Where are the tests that mock OpenAI API responses, specifically those tests that simulate interactions with the GPT-4 model, and what data are they using?', 'What entries in the dependency management files are related to OpenAI, and do they specify libraries or SDKs that support GPT-4?', 'Where is the monitoring setup that tracks API usage metrics, and how can it be configured to report detailed usage statistics for GPT-4 to aid in budget management?']
+    # search_queries = ['我想知道项目有没有使用 GPT4,\n为了确保项目的费用支出，我需要知道项目是否使用了 open ai api的 GPT4。', 'Where is the API client module that handles the integration with external AI services, specifically looking for any methods or functions making calls to the OpenAI GPT-4 model?', 'Where are the configuration settings that store the API keys and endpoints for OpenAI services, particularly those related to GPT-4 usage?', 'Where in the environment variable configurations do we define the API keys or feature toggles that control the activation of GPT-4 from OpenAI?', 'Where is the logging configuration that tracks external API calls, specifically those to OpenAI, and does it include detailed tracking suitable for budget analysis?', 'Which utility functions are used to wrap calls to the OpenAI API, and how do these distinguish between different models like GPT-3 and GPT-4?', 'Where can I find any inline documentation or comments in the codebase that mention the use of OpenAI’s GPT-4 model?', 'How is error handling managed for OpenAI API requests, especially those requesting the GPT-4 model, and what fallback mechanisms are in place?', 'Where are the tests that mock OpenAI API responses, specifically those tests that simulate interactions with the GPT-4 model, and what data are they using?', 'What entries in the dependency management files are related to OpenAI, and do they specify libraries or SDKs that support GPT-4?', 'Where is the monitoring setup that tracks API usage metrics, and how can it be configured to report detailed usage statistics for GPT-4 to aid in budget management?']
+    
+    # ai-chatbot
     # search_queries = ['根据我的项目功能完善 readme\n我想要完善我的项目的 readme 文件，请根据项目的功能和特性帮我完善 readme 文件。', 'Where is the module description for the user authentication process in the backend service, including any specific security protocols it adheres to?', 'Where is the listing of API endpoints implemented in the project, including the methods (GET, POST, etc.) and expected request and response formats?', 'Where are the user interface components and their interaction flows documented, particularly those involving user registration and data submission?', 'Where can I find the configuration settings and environment variables required for initial project setup, including any necessary API keys or database connections?', 'Where is the dependency list that outlines all external libraries and frameworks used in the project, along with their version numbers and purposes?', 'Where are the installation instructions that include steps for setting up the project locally on different operating systems (Windows, macOS, Linux)?', 'Where can I find code examples that demonstrate how to use main features of the project, ideally with comments explaining critical sections?', 'Where is the project’s licensing information, specifically the file or section that details the terms under which the project’s software is released?', 'Where are the contribution guidelines that explain how to fork the repository, create feature branches, and submit pull requests?', 'Where are the contact details or community links (like a Slack channel or forum) provided for users needing support or wishing to discuss the project?']
+    # search_queries = ['I want to start my project \n Please make an installation and start script according to the project configuration.', "Where is the `package.json` file located in the project's root directory, and what are the key dependencies listed there?", 'Where is the `requirements.txt` file for the Python project, and what key dependencies are specified?', 'Where is the `.env` file or any other environment configuration file used for setting environment variables?', 'Where is the main entry point of the application that the start script (`npm start`, `flask run`) refers to?', 'Where is the `README.md` file located, and does it contain any specific instructions for setting up the project?', 'Where is the `venv` directory created for the Python project, and how is it being activated in the script?', 'Where is the build script for the Node.js project if there is any preprocessing needed before `npm start`?', 'Where are the custom starting commands or scripts defined for the application, such as those in `scripts` section of `package.json`?', 'Where is the deployment configuration or Dockerfile if the project uses containerization?', 'Where is the version control repository URL defined that is used to clone the project?']
+    # search_queries = ["Put the four questions above send a message in one column, arranged vertically.\nrt\n['rt']", 'Where is the function that compares the user-provided password hash against the stored hash from the database in the user-authentication service?', "Where is the code that constructs the GraphQL mutation for updating a user's profile information, and what specific fields are being updated?", 'Where are the React components that render the product carousel on the homepage, and what library is being used for the carousel functionality?', 'Where is the endpoint handler for processing incoming webhook events from Stripe in the backend API, and how are the events being validated and parsed?', 'Where is the function that generates the XML sitemap for SEO, and what are the specific criteria used for determining which pages are included?', 'Where are the push notification configurations and registration logic implemented using the Firebase Cloud Messaging library in the mobile app codebase?', "Where are the Elasticsearch queries that power the autocomplete suggestions for the site's search bar, and what specific fields are being searched and returned?", 'Where is the logic for automatically provisioning and scaling EC2 instances based on CPU and memory usage metrics from CloudWatch in the DevOps scripts?', 'Where is the Python script that handles the batch processing of user-uploaded CSV files, and what specific transformations are being applied to the data?', 'Where is the configuration file that sets the rate limits for API endpoints, and how are different user roles treated in terms of rate limiting?']
+    # search_queries = ['Change the example messages view from two columns to one column']
+    # search_queries = ['Change the `exampleMessages` view from two columns to one column', 'Where is the `exampleMessages` component defined in the codebase?', 'Where is the CSS or styling code that defines the two-column layout for `exampleMessages`?', 'Where are the style classes or IDs applied to the `exampleMessages` view?', 'Where is the HTML/JSX/Template code that structures the `exampleMessages` view?', 'Where are the responsive design breakpoints defined for `exampleMessages`?', 'Where is the main container element for `exampleMessages` in the UI?', 'Where is the grid or flexbox layout code used for `exampleMessages`?', 'Where are the layout utility classes from any CSS frameworks used in the project?', 'Where are the integration tests that verify the layout of the `exampleMessages` component?', 'Where is the logic that dynamically adjusts the layout of `exampleMessages`, if any?']
+
+
+    # pynlpl
+    # 简单自然化语言处理
+    # search_queries = ['Can you help me find the best single result? If a few of them have the same score, just go with the first one you find. Thanks!', 'Where is the function that compares the user-provided password hash against the stored hash from the database?', "Where is the code that constructs the GraphQL mutation for updating a user's profile information?", 'Where are the React components that render the product carousel on the homepage?', 'Where is the endpoint handler for processing incoming webhook events from Stripe?', 'Where is the function that generates the XML sitemap for SEO?', 'Where are the push notification configurations in the mobile app codebase?', "Where are the Elasticsearch queries that power the autocomplete suggestions for the site's search bar?", 'Where is the logic for automatically provisioning and scaling EC2 instances based on metrics from CloudWatch?']
+    # 自然化处理 + 同义词转换
+    # search_queries = ['Returns just one top result (if multiple results have an equal score, the initial match is provided)', 'Where is the function that executes the main query logic and might be affecting the result set limit?', 'Where is the class or function that processes the results of the query and could be filtering out additional top-scored results?', 'Where is the SQL query definition or the equivalent logic in a NoSQL database that retrieves results based on the score?', 'Where is the data model or schema definition for the entities involved in the query?', 'Where are the unit tests that verify the correctness of the query results?', 'Where is the integration test that ensures the correct number of results are being retrieved and processed?', 'Where are the API endpoint handlers that might be impacted by changes in query result handling?', 'Where are the UI components that display the query results to the user?', 'Where is the documentation or comments related to the expected behavior of the query logic?', 'Where is the code that handles the ordering or ranking of results in the query?']
+    # test_rag_search_datasets_2
+    search_queries = ['Retrieve the final n results, although it could be fewer if not all are located. Keep in mind that the most recent results might not always correspond to the most relevant ones! This varies based on the search type.', 'Where is the function that constructs the search query for retrieving results?', 'Where is the logic that handles sorting and filtering search results based on criteria?', 'Where is the function that handles paginated responses for search results?', 'Where is the database model or schema that defines the structure of the search results?', 'Where are the utility functions that perform sorting and filtering operations on results?', 'Where is the API endpoint that handles search requests and returns the search results?', 'Where is the error handling logic that manages situations with fewer than `n` results available?', 'Where are the database indices defined to support fast retrieval of search results?', 'Where is the performance monitoring code that logs the execution time of search queries?', 'Where is the code responsible for determining the relevance of search results based on the search type?']
 
     logger.info("Fetching relevant files")
     for message, repo_context_manager in fetch_relevant_files.stream(search_queries):

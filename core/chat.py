@@ -78,25 +78,29 @@ class ChatGPT(MessageList):
         try:
             client = OpenAI()
             
-            print("Starting OpenAI stream")
+            if stream:
+                print("Starting OpenAI stream")
             response = client.chat.completions.create(
                 model=self.model,
                 messages=self.messages_dicts,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                stream=True,
+                stream=False,
             )
             streamed_text = ""
-            text = ""
-            for chunk in response:
-                new_content = chunk.choices[0].delta.content
-                text += new_content if new_content else ""
-                if new_content:
-                    print(new_content, end="", flush=True)
-                    streamed_text += new_content
-                    for stop_sequence in stop_sequences:
-                        if stop_sequence in streamed_text:
-                            return truncate_text_based_on_stop_sequence(streamed_text, stop_sequences)
+            if stream:
+                text = ""
+                for chunk in response:
+                    new_content = chunk.choices[0].delta.content
+                    text += new_content if new_content else ""
+                    if new_content:
+                        print(new_content, end="", flush=True)
+                        streamed_text += new_content
+                        for stop_sequence in stop_sequences:
+                            if stop_sequence in streamed_text:
+                                return truncate_text_based_on_stop_sequence(streamed_text, stop_sequences)
+            else:
+                streamed_text = response.choices[0].message.content
             print() # clear the line
             content = truncate_text_based_on_stop_sequence(streamed_text, stop_sequences)
         except Exception as e_:

@@ -106,7 +106,7 @@ class PoirotConfig(BaseModel):
         "pnpm-lock.yaml",
         "LICENSE",
         'package-lock.json',
-        'package.json',
+        # 'package.json',
         'pyproject.toml',
         'requirements.txt',
         'yarn.lock',
